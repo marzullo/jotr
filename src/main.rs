@@ -1,10 +1,13 @@
+pub mod jot;
+
 use std::{
     default,
-    fs::{write, File},
-    io::{Read, Write, self, BufRead}, path::{PathBuf, Path},
+    fs::{write, File, self},
+    io::{Read, Write, self, BufRead}, path::{PathBuf, Path}, error::Error,
 };
 
 use clap::{Parser, ValueEnum};
+use jot::{Jot, JotObj};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -25,6 +28,8 @@ enum CommandType {
     New,
     Edit,
     List,
+    Search,
+    Archive
 }
 
 #[derive(Parser, Debug)]
@@ -32,12 +37,22 @@ enum CommandType {
 struct Args {
     #[arg(value_enum)]
     command: CommandType,
+
+    #[arg(value_name = "[tags]")]
+    tags: Option<String>
 }
 
 fn main() {
-    println!("{:x?}", Path::new("C:\\").exists());
-
-    let config_file = get_config_file().expect("Failed to get configuration file");
+    let config_file: File;
+    let config_parsed: Config;
+    
+    match get_config_file() {
+        Ok(f) => config_file = f,
+        Err(_) => {
+            println!("Could not retrieve config.");
+            return;
+        }
+    }
 
     match parse_config(config_file) {
         Ok(config) => {
@@ -48,24 +63,37 @@ fn main() {
                 let stdin = io::stdin();
                 stdin.lock().read_line(&mut directory).unwrap();
 
-                if Path::new(directory.strip_suffix("\r\n").unwrap()).exists() {
+                directory = directory.strip_suffix("\r\n").unwrap().to_string();
+
+                if Path::new(&directory).exists() {
                     println!("Path configured!");
+
+                    fs::create_dir(directory.clone() + "\\archive").unwrap();
+
+                    write_config_file(Config { directory: directory }).unwrap();
                 } else {
                     println!("Path does not exist.");
 
                     return;
                 }
             }
+
+            config_parsed = config;
         }
-        Err(err) => println!("{}", err),
+        Err(err) => { 
+            println!("{}", err);
+            return;
+        },
     }
 
-    let args = Args::parse();
+    let args: Args = Args::parse();
 
-    match args {
-        New => new(),
-        List => list(),
-        _ => print!("Command not supported"),
+    match args.command {
+        CommandType::New => todo!(),
+        CommandType::Edit => todo!(),
+        CommandType::List => list(config_parsed),
+        CommandType::Search => search(config_parsed, args.tags.unwrap().split(",").map(|x| x.to_owned()).collect()),
+        CommandType::Archive => todo!(),
     }
 }
 
@@ -88,9 +116,18 @@ fn get_config_file() -> std::io::Result<File> {
     config_file
 }
 
+fn write_config_file(config: Config) -> Result<(), Box<dyn Error>> {
+    let mut config_file = File::options().write(true).open("config.toml")?;
+
+    config_file.write_all(toml::to_string(&config)?.as_bytes())?;
+
+    Ok(())
+}
+
+
 fn parse_config(mut file: File) -> Result<Config, toml::de::Error> {
     let mut contents = String::new();
-    let bytes = file.read_to_string(&mut contents);
+    let _ = file.read_to_string(&mut contents);
 
     let parsed_config: Config = toml::from_str(&contents)?;
 
@@ -101,6 +138,34 @@ fn new() {
     println!("New")
 }
 
-fn list() {
-    println!("List")
+fn list(config: Config) {
+    let path = Path::new(&config.directory);
+
+    for entry_result in path.read_dir().unwrap() {
+        if let Ok(entry) = entry_result {
+            if entry.file_type().unwrap().is_dir() {
+                continue;
+            }
+
+            let jot = Jot::parse(entry.path());
+
+            println!("{}", jot);
+        }
+    }
+}
+
+fn search(config: Config, tags: Vec<String>) {
+    let path = Path::new(&config.directory);
+
+    for entry_result in path.read_dir().unwrap() {
+        if let Ok(entry) = entry_result {
+            let jot = Jot::parse(entry.path());
+
+            for tag in tags.iter() {
+                if jot.tags.contains(tag) {
+                    println!("{}", jot);
+                }
+            }
+        }
+    }
 }
