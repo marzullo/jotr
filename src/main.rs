@@ -29,6 +29,7 @@ enum CommandType {
     Edit,
     List,
     Search,
+    Sync,
     Archive
 }
 
@@ -68,7 +69,10 @@ fn main() {
                 if Path::new(&directory).exists() {
                     println!("Path configured!");
 
-                    fs::create_dir(directory.clone() + "\\archive").unwrap();
+                    match fs::create_dir(directory.clone() + "\\archive") {
+                        Ok(_) => {},
+                        Err(_) => {}
+                    }
 
                     write_config_file(Config { directory: directory }).unwrap();
                 } else {
@@ -94,6 +98,7 @@ fn main() {
         CommandType::List => list(config_parsed),
         CommandType::Search => search(config_parsed, args.tags.unwrap().split(",").map(|x| x.to_owned()).collect()),
         CommandType::Archive => todo!(),
+        CommandType::Sync => todo!(),
     }
 }
 
